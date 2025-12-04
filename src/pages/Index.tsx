@@ -1,14 +1,62 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { Landing } from "@/components/Landing";
+import { Setup } from "@/components/Setup";
+import { NegotiationChat } from "@/components/NegotiationChat";
+import { BossPersona } from "@/types/negotiation";
+
+type Screen = 'landing' | 'setup' | 'chat';
+
+interface NegotiationConfig {
+  persona: BossPersona;
+  targetRaise: string;
+}
 
 const Index = () => {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
-  );
+  const [currentScreen, setCurrentScreen] = useState<Screen>('landing');
+  const [config, setConfig] = useState<NegotiationConfig | null>(null);
+
+  const handleEnterDojo = () => {
+    setCurrentScreen('setup');
+  };
+
+  const handleBackToLanding = () => {
+    setCurrentScreen('landing');
+  };
+
+  const handleStartNegotiation = (persona: BossPersona, targetRaise: string) => {
+    setConfig({ persona, targetRaise });
+    setCurrentScreen('chat');
+  };
+
+  const handleExitChat = () => {
+    setConfig(null);
+    setCurrentScreen('setup');
+  };
+
+  if (currentScreen === 'landing') {
+    return <Landing onEnterDojo={handleEnterDojo} />;
+  }
+
+  if (currentScreen === 'setup') {
+    return (
+      <Setup 
+        onBack={handleBackToLanding}
+        onStart={handleStartNegotiation}
+      />
+    );
+  }
+
+  if (currentScreen === 'chat' && config) {
+    return (
+      <NegotiationChat
+        persona={config.persona}
+        targetRaise={config.targetRaise}
+        onExit={handleExitChat}
+      />
+    );
+  }
+
+  return null;
 };
 
 export default Index;
