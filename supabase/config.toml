@@ -1,0 +1,4 @@
+project_id = "gvwieydiqurktlyyaghh"
+
+[functions.negotiation-chat]
+verify_jwt = false
