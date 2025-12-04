@@ -13,11 +13,11 @@ import {
 import { 
   ArrowLeft, 
   Send, 
-  Lightbulb, 
-  Flag,
+  Lightbulb,
   Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface NegotiationChatProps {
   persona: BossPersona;
@@ -35,10 +35,11 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const personaInfo = BOSS_PERSONAS.find(p => p.id === persona)!;
+  const systemPrompt = getSystemPrompt(persona, targetRaise);
 
   useEffect(() => {
     // Initial boss greeting
-    const greeting = getBossGreeting(persona, targetRaise);
+    const greeting = getBossGreeting(persona);
     setMessages([
       {
         id: '1',
@@ -64,7 +65,7 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const getBossGreeting = (persona: BossPersona, raise: string): string => {
+  const getBossGreeting = (persona: BossPersona): string => {
     const greetings: Record<BossPersona, string> = {
       'budget-blocker': `Hey! Come on in, have a seat. So, you wanted to chat about your compensation? I saw your meeting request... look, I really appreciate you bringing this up directly with me. So, what's on your mind?`,
       'data-driven': `You requested this meeting to discuss compensation. I have exactly 15 minutes. Let's get straight to it - what specifically are you proposing?`,
@@ -87,104 +88,103 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
     setInput("");
     setIsLoading(true);
 
-    // Simulate AI response (will be replaced with actual API call)
-    await simulateBossResponse(userMessage.content);
+    try {
+      // Build conversation history for API
+      const conversationHistory = [...messages, userMessage]
+        .filter(m => m.role !== 'system')
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+
+      const { data, error } = await supabase.functions.invoke('negotiation-chat', {
+        body: { 
+          messages: conversationHistory,
+          systemPrompt,
+          mode: 'negotiate'
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      const bossMessage: Message = {
+        id: Date.now().toString(),
+        role: 'boss',
+        content: data.content,
+        timestamp: new Date()
+      };
+
+      setMessages(prev => [...prev, bossMessage]);
+      
+      // Update tension based on response
+      const tensionIndicators = /budget|can't|won't|no|unfortunately|impossible|policy/gi;
+      const matches = (data.content.match(tensionIndicators) || []).length;
+      setTensionLevel(prev => Math.min(100, prev + Math.min(matches * 5, 15)));
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to get response",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const simulateBossResponse = async (userInput: string) => {
-    // Simulate typing delay
-    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
-
-    // Mock responses based on persona
-    const response = getMockResponse(persona, userInput);
-    
-    const bossMessage: Message = {
-      id: Date.now().toString(),
-      role: 'boss',
-      content: response,
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, bossMessage]);
-    setTensionLevel(prev => Math.min(100, prev + Math.random() * 15));
-    setIsLoading(false);
-  };
-
-  const getMockResponse = (persona: BossPersona, input: string): string => {
-    const lowerInput = input.toLowerCase();
-    
-    // Check for strong arguments
-    const hasMetrics = /\d+%|revenue|profit|saved|generated|increased|delivered/i.test(input);
-    const hasExamples = /project|client|team|led|completed|achieved/i.test(input);
-    
-    const responses: Record<BossPersona, string[]> = {
-      'budget-blocker': [
-        "I hear you, I really do. And honestly, you've been doing great work. The thing is... the budget for this quarter is completely locked. I wish there was something I could do.",
-        "You make some good points, truly. But you know how it is - HR has these strict guidelines, and my hands are tied with the budget we have.",
-        "Look, I want to help you here. What if we revisited this in Q3? I could probably make a stronger case then when we're doing annual planning.",
-        hasMetrics ? "Those numbers are impressive, I won't lie. Let me see if there's any flexibility in the contingency fund..." : "I understand your position, but without specific numbers, it's hard for me to justify going to bat for this.",
-      ],
-      'data-driven': [
-        "Interesting. What metrics are you using to benchmark that figure? I'd need to see the data supporting this request.",
-        "I appreciate the confidence, but confidence doesn't drive P&L. What's the quantifiable impact you've had in the last 12 months?",
-        "Market rate is one data point. Internal equity is another. How does your performance rank against your peers, objectively?",
-        hasMetrics && hasExamples ? "Alright, those are the kinds of specifics I need. The ROI argument is becoming clearer. Let me review these figures." : "I need specifics. Bring me a one-pager with metrics, comparables, and a clear ROI case.",
-      ],
-      'gaslighter': [
-        "A raise? In this economy? I thought you'd be grateful to have stability. Do you know how many people would love to have your job?",
-        "I'm a little surprised, honestly. I didn't think you were the type to be so... focused on money. It's a bit disappointing.",
-        "Well, everyone thinks they deserve more. The question is, what makes you so special? I'm not seeing anything extraordinary here.",
-        hasMetrics && hasExamples ? "Hmm, well... I suppose you have done some things right. But don't let this go to your head. Fine, I'll consider it." : "Look, I appreciate your enthusiasm, but I think you might be overestimating your contributions here.",
-      ],
-    };
-
-    const options = responses[persona];
-    return options[Math.floor(Math.random() * options.length)];
-  };
-
-  const handleGetFeedback = () => {
+  const handleGetFeedback = async () => {
     setIsFeedbackMode(true);
-    const feedbackMessage: Message = {
+    
+    const feedbackSystemMessage: Message = {
       id: Date.now().toString(),
       role: 'system',
       content: '🎯 Feedback Mode - Analyzing your negotiation...',
       timestamp: new Date()
     };
-    setMessages(prev => [...prev, feedbackMessage]);
+    setMessages(prev => [...prev, feedbackSystemMessage]);
+    setIsLoading(true);
 
-    // Simulate feedback (will be AI-generated)
-    setTimeout(() => {
-      const feedback: Message = {
+    try {
+      // Build conversation history for feedback
+      const conversationHistory = messages
+        .filter(m => m.role !== 'system')
+        .map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+
+      const { data, error } = await supabase.functions.invoke('negotiation-chat', {
+        body: { 
+          messages: conversationHistory,
+          systemPrompt: getFeedbackPrompt(),
+          mode: 'feedback'
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      const feedbackMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'boss',
-        content: generateMockFeedback(),
+        content: data.content,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, feedback]);
-    }, 2000);
-  };
+      setMessages(prev => [...prev, feedbackMessage]);
 
-  const generateMockFeedback = (): string => {
-    return `**Negotiation Feedback** 📝
-
-**Strengths:**
-• You initiated the conversation - that takes courage
-• You stayed professional throughout
-
-**Areas for Improvement:**
-• Lead with specific, quantifiable achievements
-• Research market rates beforehand
-• Use the "anchoring" technique - start higher than your target
-
-**Key Tactics to Try:**
-• "Based on my research and contributions, I'm looking for X"
-• Silence is powerful - don't fill every pause
-• Have a BATNA (Best Alternative to Negotiated Agreement)
-
-**Confidence Score: 6/10**
-Good start! With more preparation and specific examples, you'll be unstoppable.
-
-*Click "Exit" to try again with different tactics!*`;
+    } catch (error) {
+      console.error("Error getting feedback:", error);
+      toast({
+        title: "Error",
+        description: "Failed to get feedback. Please try again.",
+        variant: "destructive"
+      });
+      setIsFeedbackMode(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -224,6 +224,7 @@ Good start! With more preparation and specific examples, you'll be unstoppable.
                 variant="outline" 
                 size="sm"
                 onClick={handleGetFeedback}
+                disabled={isLoading}
                 className="hidden sm:flex"
               >
                 <Lightbulb className="w-4 h-4 mr-1" />
@@ -270,7 +271,7 @@ Good start! With more preparation and specific examples, you'll be unstoppable.
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Make your case..."
+              placeholder={isFeedbackMode ? "Feedback mode - review the analysis above" : "Make your case..."}
               className="min-h-[50px] max-h-[120px] resize-none"
               disabled={isLoading || isFeedbackMode}
             />
@@ -294,7 +295,7 @@ Good start! With more preparation and specific examples, you'll be unstoppable.
               variant="ghost" 
               size="sm"
               onClick={handleGetFeedback}
-              disabled={isFeedbackMode}
+              disabled={isFeedbackMode || isLoading}
               className="sm:hidden"
             >
               <Lightbulb className="w-4 h-4 mr-1" />
