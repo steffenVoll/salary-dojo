@@ -2,23 +2,25 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatBubble } from "./ChatBubble";
-import { TensionBar } from "./TensionBar";
 import { CoachingTip } from "./CoachingTip";
+import { ConversationGrading } from "./ConversationGrading";
 import { 
   Message, 
   BossPersona, 
   BOSS_PERSONAS, 
-  getSystemPrompt,
-  getFeedbackPrompt 
+  getSystemPrompt
 } from "@/types/negotiation";
 import { 
   ArrowLeft, 
   Send, 
   Lightbulb,
-  Loader2
+  Loader2,
+  Flag
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 interface NegotiationChatProps {
   persona: BossPersona;
@@ -26,42 +28,74 @@ interface NegotiationChatProps {
   onExit: () => void;
 }
 
+interface Grading {
+  likelihood_of_success: number;
+  overall_summary: string;
+  areas: Array<{ name: string; score: number; feedback: string }>;
+}
+
 export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationChatProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [tensionLevel, setTensionLevel] = useState(20);
-  const [isFeedbackMode, setIsFeedbackMode] = useState(false);
   const [coachingTip, setCoachingTip] = useState<{ tactic: string; tip: string } | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isEnded, setIsEnded] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
+  const [grading, setGrading] = useState<Grading | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const personaInfo = BOSS_PERSONAS.find(p => p.id === persona)!;
   const systemPrompt = getSystemPrompt(persona, targetRaise);
 
   useEffect(() => {
-    // Initial boss greeting
-    const greeting = getBossGreeting(persona);
-    setMessages([
-      {
-        id: '1',
-        role: 'system',
-        content: 'Negotiation started',
-        timestamp: new Date()
-      },
-      {
-        id: '2',
-        role: 'boss',
-        content: greeting,
-        timestamp: new Date()
-      }
-    ]);
+    const initConversation = async () => {
+      const greeting = getBossGreeting(persona);
+      setMessages([
+        {
+          id: '1',
+          role: 'system',
+          content: 'Negotiation started',
+          timestamp: new Date()
+        },
+        {
+          id: '2',
+          role: 'boss',
+          content: greeting,
+          timestamp: new Date()
+        }
+      ]);
 
-    toast({
-      title: "Negotiation Started",
-      description: `You're now negotiating with ${personaInfo.name}`,
-    });
-  }, [persona, targetRaise]);
+      // Save conversation to database
+      if (user) {
+        const { data } = await supabase
+          .from('conversations')
+          .insert({
+            user_id: user.id,
+            boss_persona: persona,
+            target_raise: targetRaise,
+            messages: [{ role: 'boss', content: greeting }],
+            status: 'active'
+          })
+          .select()
+          .single();
+
+        if (data) {
+          setConversationId(data.id);
+        }
+      }
+
+      toast({
+        title: "Negotiation Started",
+        description: `You're now negotiating with ${personaInfo.name}`,
+      });
+    };
+
+    initConversation();
+  }, [persona, targetRaise, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -76,6 +110,19 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
     return greetings[persona];
   };
 
+  const updateConversationInDb = async (newMessages: Message[]) => {
+    if (!conversationId) return;
+    
+    const messagesToSave = newMessages
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role, content: m.content }));
+
+    await supabase
+      .from('conversations')
+      .update({ messages: messagesToSave })
+      .eq('id', conversationId);
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -86,13 +133,13 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInput("");
     setIsLoading(true);
 
     try {
-      // Build conversation history for API
-      const conversationHistory = [...messages, userMessage]
+      const conversationHistory = newMessages
         .filter(m => m.role !== 'system')
         .map(m => ({
           role: m.role,
@@ -117,17 +164,13 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, bossMessage]);
+      const updatedMessages = [...newMessages, bossMessage];
+      setMessages(updatedMessages);
+      updateConversationInDb(updatedMessages);
       
-      // Set coaching tip if available
       if (data.coachingTip) {
         setCoachingTip(data.coachingTip);
       }
-      
-      // Update tension based on response
-      const tensionIndicators = /budget|can't|won't|no|unfortunately|impossible|policy/gi;
-      const matches = (data.content.match(tensionIndicators) || []).length;
-      setTensionLevel(prev => Math.min(100, prev + Math.min(matches * 5, 15)));
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -141,56 +184,48 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
     }
   };
 
-  const handleGetFeedback = async () => {
-    setIsFeedbackMode(true);
-    
-    const feedbackSystemMessage: Message = {
-      id: Date.now().toString(),
-      role: 'system',
-      content: '🎯 Feedback Mode - Analyzing your negotiation...',
-      timestamp: new Date()
-    };
-    setMessages(prev => [...prev, feedbackSystemMessage]);
-    setIsLoading(true);
+  const handleEndConversation = async (outcome: 'won' | 'gave_up') => {
+    setIsEnded(true);
+    setIsGrading(true);
 
     try {
-      // Build conversation history for feedback
       const conversationHistory = messages
         .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role,
-          content: m.content
-        }));
+        .map(m => ({ role: m.role, content: m.content }));
 
-      const { data, error } = await supabase.functions.invoke('negotiation-chat', {
+      const { data, error } = await supabase.functions.invoke('grade-conversation', {
         body: { 
           messages: conversationHistory,
-          systemPrompt: getFeedbackPrompt(),
-          mode: 'feedback'
+          persona: personaInfo.name,
+          outcome
         }
       });
 
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      const feedbackMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'boss',
-        content: data.content,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, feedbackMessage]);
+      setGrading(data);
+
+      // Update conversation with grading
+      if (conversationId) {
+        await supabase
+          .from('conversations')
+          .update({ 
+            status: 'completed',
+            grading: data
+          })
+          .eq('id', conversationId);
+      }
 
     } catch (error) {
-      console.error("Error getting feedback:", error);
+      console.error("Error grading conversation:", error);
       toast({
         title: "Error",
-        description: "Failed to get feedback. Please try again.",
+        description: "Failed to grade conversation",
         variant: "destructive"
       });
-      setIsFeedbackMode(false);
     } finally {
-      setIsLoading(false);
+      setIsGrading(false);
     }
   };
 
@@ -200,6 +235,30 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
       sendMessage();
     }
   };
+
+  // Show grading screen
+  if (grading) {
+    return (
+      <ConversationGrading 
+        grading={grading}
+        onNewConversation={onExit}
+        onViewHistory={() => navigate('/history')}
+      />
+    );
+  }
+
+  // Show loading while grading
+  if (isGrading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-lg font-medium text-foreground">Analyzing your negotiation...</p>
+          <p className="text-sm text-muted-foreground">This will just take a moment</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -225,19 +284,24 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
           </div>
 
           <div className="flex items-center gap-2">
-            <TensionBar level={tensionLevel} />
-            {!isFeedbackMode && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={handleGetFeedback}
-                disabled={isLoading}
-                className="hidden sm:flex"
-              >
-                <Lightbulb className="w-4 h-4 mr-1" />
-                Feedback
-              </Button>
-            )}
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => handleEndConversation('won')}
+              disabled={isLoading}
+              className="text-green-600 border-green-600 hover:bg-green-50"
+            >
+              I Won! 🎉
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => handleEndConversation('gave_up')}
+              disabled={isLoading}
+            >
+              <Flag className="w-4 h-4 mr-1" />
+              End
+            </Button>
           </div>
         </div>
       </header>
@@ -274,24 +338,22 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
       <div className="flex-shrink-0 border-t border-border bg-card/50 backdrop-blur-sm">
         <div className="max-w-3xl mx-auto px-4 py-4">
           {/* Coaching Tip */}
-          {!isFeedbackMode && (
-            <div className="mb-4">
-              <CoachingTip tip={coachingTip} />
-            </div>
-          )}
+          <div className="mb-4">
+            <CoachingTip tip={coachingTip} />
+          </div>
           
           <div className="flex gap-3">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isFeedbackMode ? "Feedback mode - review the analysis above" : "Make your case..."}
+              placeholder="Make your case..."
               className="min-h-[50px] max-h-[120px] resize-none"
-              disabled={isLoading || isFeedbackMode}
+              disabled={isLoading || isEnded}
             />
             <Button 
               onClick={sendMessage}
-              disabled={!input.trim() || isLoading || isFeedbackMode}
+              disabled={!input.trim() || isLoading || isEnded}
               className="h-auto"
             >
               {isLoading ? (
@@ -301,21 +363,9 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
               )}
             </Button>
           </div>
-          <div className="flex items-center justify-between mt-3">
-            <p className="text-xs text-muted-foreground">
-              Press Enter to send, Shift+Enter for new line
-            </p>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={handleGetFeedback}
-              disabled={isFeedbackMode || isLoading}
-              className="sm:hidden"
-            >
-              <Lightbulb className="w-4 h-4 mr-1" />
-              Feedback
-            </Button>
-          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Press Enter to send, Shift+Enter for new line
+          </p>
         </div>
       </div>
     </div>

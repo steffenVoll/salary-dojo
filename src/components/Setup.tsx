@@ -3,7 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BossCard } from "./BossCard";
 import { BOSS_PERSONAS, BossPersonaInfo } from "@/types/negotiation";
-import { ArrowLeft, ArrowRight, DollarSign, Mic, MessageSquare } from "lucide-react";
+import { ArrowLeft, ArrowRight, DollarSign, Mic, MessageSquare, Coins } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 interface SetupProps {
   onBack: () => void;
@@ -14,12 +18,38 @@ export function Setup({ onBack, onStart }: SetupProps) {
   const [selectedPersona, setSelectedPersona] = useState<BossPersonaInfo | null>(null);
   const [targetRaise, setTargetRaise] = useState("");
   const [useVoice, setUseVoice] = useState(false);
+  const { credits, deductCredit, user } = useAuth();
+  const navigate = useNavigate();
 
-  const canStart = selectedPersona && targetRaise.trim();
+  const canStart = selectedPersona && targetRaise.trim() && credits > 0;
 
-  const handleStart = () => {
-    if (selectedPersona && targetRaise.trim()) {
-      onStart(selectedPersona, targetRaise.trim(), useVoice);
+  const handleStart = async () => {
+    if (!selectedPersona || !targetRaise.trim()) return;
+    
+    if (credits <= 0) {
+      toast.error("You need conversation tokens to practice!");
+      return;
+    }
+
+    const success = await deductCredit();
+    if (!success) {
+      toast.error("Failed to use token. Please try again.");
+      return;
+    }
+
+    onStart(selectedPersona, targetRaise.trim(), useVoice);
+  };
+
+  const handleBuyCredits = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-payment');
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      toast.error('Failed to start payment. Please try again.');
     }
   };
 
@@ -41,7 +71,10 @@ export function Setup({ onBack, onStart }: SetupProps) {
             </div>
             <span className="font-bold text-foreground">Breadshift</span>
           </div>
-          <div className="w-16" />
+          <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
+            <Coins className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">{credits} tokens</span>
+          </div>
         </div>
       </header>
 
@@ -56,6 +89,17 @@ export function Setup({ onBack, onStart }: SetupProps) {
             Select the type of boss you want to practice negotiating with
           </p>
         </div>
+
+        {/* Credits Warning */}
+        {credits <= 0 && (
+          <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 mb-8 text-center">
+            <p className="text-orange-600 font-medium mb-2">You're out of conversation tokens!</p>
+            <Button onClick={handleBuyCredits} className="bg-orange-500 hover:bg-orange-600">
+              <Coins className="w-4 h-4 mr-2" />
+              Buy 3 Tokens - £5
+            </Button>
+          </div>
+        )}
 
         {/* Boss Selection */}
         <div className="grid md:grid-cols-3 gap-4 mb-12">
@@ -110,7 +154,7 @@ export function Setup({ onBack, onStart }: SetupProps) {
               onClick={() => setUseVoice(false)}
               className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                 !useVoice 
-                  ? 'border-toast-gold bg-toast-gold/10 text-foreground' 
+                  ? 'border-primary bg-primary/10 text-foreground' 
                   : 'border-border bg-card hover:border-muted-foreground text-muted-foreground'
               }`}
             >
@@ -121,7 +165,7 @@ export function Setup({ onBack, onStart }: SetupProps) {
               onClick={() => setUseVoice(true)}
               className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                 useVoice 
-                  ? 'border-toast-gold bg-toast-gold/10 text-foreground' 
+                  ? 'border-primary bg-primary/10 text-foreground' 
                   : 'border-border bg-card hover:border-muted-foreground text-muted-foreground'
               }`}
             >
@@ -145,6 +189,11 @@ export function Setup({ onBack, onStart }: SetupProps) {
             {useVoice ? 'Start Voice Negotiation' : 'Start Negotiation'}
             <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
           </Button>
+          {!canStart && credits > 0 && (
+            <p className="text-sm text-muted-foreground mt-3">
+              Select a boss and enter your target raise to continue
+            </p>
+          )}
         </div>
       </main>
     </div>
