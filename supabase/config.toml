@@ -5,3 +5,12 @@ verify_jwt = false
 
 [functions.realtime-session]
 verify_jwt = false
+
+[functions.create-payment]
+verify_jwt = false
+
+[functions.add-credits]
+verify_jwt = false
+
+[functions.grade-conversation]
+verify_jwt = false

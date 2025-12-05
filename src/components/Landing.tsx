@@ -1,11 +1,48 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, MessageSquare, Target, TrendingUp } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { ArrowRight, MessageSquare, Target, TrendingUp, LogIn, LogOut, Coins, History } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface LandingProps {
   onEnterDojo: () => void;
 }
 
 export function Landing({ onEnterDojo }: LandingProps) {
+  const { user, credits, signOut, loading } = useAuth();
+  const navigate = useNavigate();
+
+  const handleBuyCredits = async () => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-payment');
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      toast.error('Failed to start payment. Please try again.');
+    }
+  };
+
+  const handleEnterDojo = () => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    if (credits <= 0) {
+      toast.error('You need conversation tokens to practice. Buy some first!');
+      return;
+    }
+    onEnterDojo();
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -16,6 +53,38 @@ export function Landing({ onEnterDojo }: LandingProps) {
               <span className="text-2xl">🍞</span>
             </div>
             <span className="font-bold text-xl text-foreground">Breadshift</span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {!loading && (
+              <>
+                {user ? (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => navigate('/history')}
+                      className="hidden sm:flex"
+                    >
+                      <History className="w-4 h-4 mr-2" />
+                      History
+                    </Button>
+                    <div className="flex items-center gap-2 bg-secondary px-3 py-1.5 rounded-full">
+                      <Coins className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">{credits} tokens</span>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={signOut}>
+                      <LogOut className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => navigate('/auth')}>
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Sign In
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -49,20 +118,47 @@ export function Landing({ onEnterDojo }: LandingProps) {
             with AI-powered managers who push back just like the real thing.
           </p>
 
-          {/* CTA Button */}
+          {/* CTA Buttons */}
           <div 
-            className="animate-slide-up"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up"
             style={{ animationDelay: '0.3s' }}
           >
             <Button 
               variant="hero" 
-              onClick={onEnterDojo}
+              onClick={handleEnterDojo}
               className="group"
             >
               Enter the Dojo
               <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
             </Button>
+            
+            {user && credits <= 0 && (
+              <Button 
+                variant="outline"
+                onClick={handleBuyCredits}
+                className="group"
+              >
+                <Coins className="w-5 h-5 mr-2" />
+                Buy 3 Tokens - £5
+              </Button>
+            )}
+            
+            {!user && (
+              <Button 
+                variant="outline"
+                onClick={() => navigate('/auth')}
+              >
+                Sign up to get started
+              </Button>
+            )}
           </div>
+
+          {/* Pricing Info */}
+          {user && credits <= 0 && (
+            <p className="text-sm text-muted-foreground mt-4">
+              Each token = 1 practice conversation
+            </p>
+          )}
 
           {/* Features */}
           <div 
@@ -76,8 +172,8 @@ export function Landing({ onEnterDojo }: LandingProps) {
             />
             <FeatureCard 
               icon={<Target className="w-6 h-6" />}
-              title="Get Feedback"
-              description="Receive expert coaching on your negotiation tactics"
+              title="Get Graded"
+              description="Receive detailed scoring and feedback on your performance"
             />
             <FeatureCard 
               icon={<TrendingUp className="w-6 h-6" />}

@@ -4,6 +4,7 @@ import { Setup } from "@/components/Setup";
 import { NegotiationChat } from "@/components/NegotiationChat";
 import VoiceChat from "@/components/VoiceChat";
 import { BossPersonaInfo } from "@/types/negotiation";
+import { useAuth } from "@/hooks/useAuth";
 
 type Screen = 'landing' | 'setup' | 'chat' | 'voice';
 
@@ -15,6 +16,7 @@ interface NegotiationConfig {
 const Index = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('landing');
   const [config, setConfig] = useState<NegotiationConfig | null>(null);
+  const { loading } = useAuth();
 
   const handleEnterDojo = () => {
     setCurrentScreen('setup');
@@ -33,6 +35,14 @@ const Index = () => {
     setConfig(null);
     setCurrentScreen('setup');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (currentScreen === 'landing') {
     return <Landing onEnterDojo={handleEnterDojo} />;
