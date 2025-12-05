@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Landing } from "@/components/Landing";
 import { Setup } from "@/components/Setup";
 import { NegotiationChat } from "@/components/NegotiationChat";
-import { BossPersona } from "@/types/negotiation";
+import VoiceChat from "@/components/VoiceChat";
+import { BossPersonaInfo } from "@/types/negotiation";
 
-type Screen = 'landing' | 'setup' | 'chat';
+type Screen = 'landing' | 'setup' | 'chat' | 'voice';
 
 interface NegotiationConfig {
-  persona: BossPersona;
+  persona: BossPersonaInfo;
   targetRaise: string;
 }
 
@@ -23,9 +24,9 @@ const Index = () => {
     setCurrentScreen('landing');
   };
 
-  const handleStartNegotiation = (persona: BossPersona, targetRaise: string) => {
+  const handleStartNegotiation = (persona: BossPersonaInfo, targetRaise: string, useVoice: boolean = false) => {
     setConfig({ persona, targetRaise });
-    setCurrentScreen('chat');
+    setCurrentScreen(useVoice ? 'voice' : 'chat');
   };
 
   const handleExitChat = () => {
@@ -49,9 +50,19 @@ const Index = () => {
   if (currentScreen === 'chat' && config) {
     return (
       <NegotiationChat
-        persona={config.persona}
+        persona={config.persona.id}
         targetRaise={config.targetRaise}
         onExit={handleExitChat}
+      />
+    );
+  }
+
+  if (currentScreen === 'voice' && config) {
+    return (
+      <VoiceChat
+        persona={config.persona}
+        targetAmount={config.targetRaise}
+        onEnd={handleExitChat}
       />
     );
   }
