@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatBubble } from "./ChatBubble";
 import { TensionBar } from "./TensionBar";
+import { CoachingTip } from "./CoachingTip";
 import { 
   Message, 
   BossPersona, 
@@ -32,6 +33,7 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
   const [isLoading, setIsLoading] = useState(false);
   const [tensionLevel, setTensionLevel] = useState(20);
   const [isFeedbackMode, setIsFeedbackMode] = useState(false);
+  const [coachingTip, setCoachingTip] = useState<{ tactic: string; tip: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const personaInfo = BOSS_PERSONAS.find(p => p.id === persona)!;
@@ -116,6 +118,11 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
       };
 
       setMessages(prev => [...prev, bossMessage]);
+      
+      // Set coaching tip if available
+      if (data.coachingTip) {
+        setCoachingTip(data.coachingTip);
+      }
       
       // Update tension based on response
       const tensionIndicators = /budget|can't|won't|no|unfortunately|impossible|policy/gi;
@@ -266,6 +273,13 @@ export function NegotiationChat({ persona, targetRaise, onExit }: NegotiationCha
       {/* Input */}
       <div className="flex-shrink-0 border-t border-border bg-card/50 backdrop-blur-sm">
         <div className="max-w-3xl mx-auto px-4 py-4">
+          {/* Coaching Tip */}
+          {!isFeedbackMode && (
+            <div className="mb-4">
+              <CoachingTip tip={coachingTip} />
+            </div>
+          )}
+          
           <div className="flex gap-3">
             <Textarea
               value={input}
