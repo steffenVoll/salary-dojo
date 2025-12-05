@@ -2,23 +2,24 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BossCard } from "./BossCard";
-import { BOSS_PERSONAS, BossPersona } from "@/types/negotiation";
-import { ArrowLeft, ArrowRight, DollarSign } from "lucide-react";
+import { BOSS_PERSONAS, BossPersonaInfo } from "@/types/negotiation";
+import { ArrowLeft, ArrowRight, DollarSign, Mic, MessageSquare } from "lucide-react";
 
 interface SetupProps {
   onBack: () => void;
-  onStart: (persona: BossPersona, targetRaise: string) => void;
+  onStart: (persona: BossPersonaInfo, targetRaise: string, useVoice: boolean) => void;
 }
 
 export function Setup({ onBack, onStart }: SetupProps) {
-  const [selectedPersona, setSelectedPersona] = useState<BossPersona | null>(null);
+  const [selectedPersona, setSelectedPersona] = useState<BossPersonaInfo | null>(null);
   const [targetRaise, setTargetRaise] = useState("");
+  const [useVoice, setUseVoice] = useState(false);
 
   const canStart = selectedPersona && targetRaise.trim();
 
   const handleStart = () => {
     if (selectedPersona && targetRaise.trim()) {
-      onStart(selectedPersona, targetRaise.trim());
+      onStart(selectedPersona, targetRaise.trim(), useVoice);
     }
   };
 
@@ -40,7 +41,7 @@ export function Setup({ onBack, onStart }: SetupProps) {
             </div>
             <span className="font-bold text-foreground">Breadshift</span>
           </div>
-          <div className="w-16" /> {/* Spacer for centering */}
+          <div className="w-16" />
         </div>
       </header>
 
@@ -66,8 +67,8 @@ export function Setup({ onBack, onStart }: SetupProps) {
             >
               <BossCard
                 persona={persona}
-                isSelected={selectedPersona === persona.id}
-                onSelect={() => setSelectedPersona(persona.id)}
+                isSelected={selectedPersona?.id === persona.id}
+                onSelect={() => setSelectedPersona(persona)}
               />
             </div>
           ))}
@@ -75,7 +76,7 @@ export function Setup({ onBack, onStart }: SetupProps) {
 
         {/* Target Raise Input */}
         <div 
-          className="max-w-md mx-auto mb-10 animate-slide-up"
+          className="max-w-md mx-auto mb-8 animate-slide-up"
           style={{ animationDelay: '0.3s' }}
         >
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -96,6 +97,40 @@ export function Setup({ onBack, onStart }: SetupProps) {
           </p>
         </div>
 
+        {/* Mode Selection */}
+        <div 
+          className="max-w-md mx-auto mb-10 animate-slide-up"
+          style={{ animationDelay: '0.35s' }}
+        >
+          <label className="block text-sm font-medium text-foreground mb-3">
+            How do you want to negotiate?
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setUseVoice(false)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                !useVoice 
+                  ? 'border-toast-gold bg-toast-gold/10 text-foreground' 
+                  : 'border-border bg-card hover:border-muted-foreground text-muted-foreground'
+              }`}
+            >
+              <MessageSquare className="w-6 h-6" />
+              <span className="font-medium text-sm">Text Chat</span>
+            </button>
+            <button
+              onClick={() => setUseVoice(true)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                useVoice 
+                  ? 'border-toast-gold bg-toast-gold/10 text-foreground' 
+                  : 'border-border bg-card hover:border-muted-foreground text-muted-foreground'
+              }`}
+            >
+              <Mic className="w-6 h-6" />
+              <span className="font-medium text-sm">Voice Chat</span>
+            </button>
+          </div>
+        </div>
+
         {/* Start Button */}
         <div 
           className="text-center animate-slide-up"
@@ -107,7 +142,7 @@ export function Setup({ onBack, onStart }: SetupProps) {
             onClick={handleStart}
             className="group"
           >
-            Start Negotiation
+            {useVoice ? 'Start Voice Negotiation' : 'Start Negotiation'}
             <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
           </Button>
         </div>

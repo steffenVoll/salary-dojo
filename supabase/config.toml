@@ -2,3 +2,6 @@ project_id = "gvwieydiqurktlyyaghh"
 
 [functions.negotiation-chat]
 verify_jwt = false
+
+[functions.realtime-session]
+verify_jwt = false
